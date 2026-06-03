@@ -1,9 +1,9 @@
-const CACHE_NAME = "task-timer-v3";
+const CACHE_NAME = "task-timer-v6";
 const APP_ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=6",
+  "./app.js?v=6",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

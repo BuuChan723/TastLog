@@ -1,11 +1,17 @@
 const STORAGE_KEY = "task-timer-log-v1";
+const COUNTDOWN_STORAGE_KEY = "task-timer-countdown-v1";
 
 if (new URLSearchParams(window.location.search).has("clear")) {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(COUNTDOWN_STORAGE_KEY);
   window.history.replaceState({}, "", window.location.pathname);
 }
 
 const elements = {
+  workModeButton: document.querySelector("#workModeButton"),
+  countdownModeButton: document.querySelector("#countdownModeButton"),
+  workView: document.querySelector("#workView"),
+  countdownView: document.querySelector("#countdownView"),
   form: document.querySelector("#taskForm"),
   taskName: document.querySelector("#taskName"),
   startButton: document.querySelector("#startButton"),
@@ -32,10 +38,25 @@ const elements = {
   selectedDayList: document.querySelector("#selectedDayList"),
   completedTotal: document.querySelector("#completedTotal"),
   completedList: document.querySelector("#completedList"),
+  countdownForm: document.querySelector("#countdownForm"),
+  countdownTaskName: document.querySelector("#countdownTaskName"),
+  countdownHours: document.querySelector("#countdownHours"),
+  countdownMinutes: document.querySelector("#countdownMinutes"),
+  countdownCurrentName: document.querySelector("#countdownCurrentName"),
+  countdownTimer: document.querySelector("#countdownTimer"),
+  countdownStatus: document.querySelector("#countdownStatus"),
+  countdownStartedAt: document.querySelector("#countdownStartedAt"),
+  countdownQuickPauseButton: document.querySelector("#countdownQuickPauseButton"),
+  countdownQuickCompleteButton: document.querySelector("#countdownQuickCompleteButton"),
+  countdownOpenCount: document.querySelector("#countdownOpenCount"),
+  countdownOpenList: document.querySelector("#countdownOpenList"),
+  countdownCompletedTotal: document.querySelector("#countdownCompletedTotal"),
+  countdownCompletedList: document.querySelector("#countdownCompletedList"),
   emptyTemplate: document.querySelector("#emptyTemplate")
 };
 
 let state = loadState();
+let countdownState = loadCountdownState();
 let calendarCursor = new Date();
 calendarCursor.setDate(1);
 
@@ -44,12 +65,16 @@ if (!state.selectedDate) {
 }
 
 ensureSingleRunningTask();
+ensureSingleRunningCountdown();
 bindEvents();
 render();
 setInterval(render, 1000);
 registerServiceWorker();
 
 function bindEvents() {
+  elements.workModeButton.addEventListener("click", () => setMode("work"));
+  elements.countdownModeButton.addEventListener("click", () => setMode("countdown"));
+
   elements.form.addEventListener("submit", (event) => {
     event.preventDefault();
     startTask();
@@ -77,6 +102,33 @@ function bindEvents() {
     if (button.dataset.action === "finish") finishTask(taskId);
   });
 
+  elements.countdownForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    startCountdownTask();
+  });
+
+  elements.countdownQuickPauseButton.addEventListener("click", () => {
+    const task = getRunningCountdown();
+    if (task) pauseCountdownTask(task.id);
+  });
+
+  elements.countdownQuickCompleteButton.addEventListener("click", () => {
+    const task = getRunningCountdown();
+    if (task) finishCountdownTask(task.id);
+  });
+
+  elements.countdownOpenList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-countdown-action]");
+    if (!button) return;
+
+    const taskId = button.closest("[data-countdown-id]")?.dataset.countdownId;
+    if (!taskId) return;
+
+    if (button.dataset.countdownAction === "pause") pauseCountdownTask(taskId);
+    if (button.dataset.countdownAction === "resume") resumeCountdownTask(taskId);
+    if (button.dataset.countdownAction === "finish") finishCountdownTask(taskId);
+  });
+
   elements.prevMonth.addEventListener("click", () => {
     calendarCursor.setMonth(calendarCursor.getMonth() - 1);
     render();
@@ -94,11 +146,25 @@ function bindEvents() {
       tasks: [],
       selectedDate: dateKey(new Date())
     };
+    countdownState = {
+      tasks: []
+    };
     calendarCursor = new Date();
     calendarCursor.setDate(1);
     saveState();
+    saveCountdownState();
     render();
   });
+}
+
+function setMode(mode) {
+  const showCountdown = mode === "countdown";
+  elements.workView.hidden = showCountdown;
+  elements.countdownView.hidden = !showCountdown;
+  elements.workModeButton.classList.toggle("active", !showCountdown);
+  elements.countdownModeButton.classList.toggle("active", showCountdown);
+  elements.workModeButton.setAttribute("aria-selected", String(!showCountdown));
+  elements.countdownModeButton.setAttribute("aria-selected", String(showCountdown));
 }
 
 function registerServiceWorker() {
@@ -171,13 +237,91 @@ function finishTask(taskId) {
   render();
 }
 
+function startCountdownTask() {
+  const name = elements.countdownTaskName.value.trim();
+  const totalMs = countdownInputMs();
+  if (!name || totalMs <= 0) return;
+
+  pauseRunningCountdowns();
+  const now = new Date().toISOString();
+
+  countdownState.tasks.unshift({
+    id: crypto.randomUUID(),
+    name,
+    status: "running",
+    totalMs,
+    remainingMs: totalMs,
+    createdAt: now,
+    completedAt: null,
+    lastStartedAt: now,
+    segments: [
+      {
+        start: now,
+        end: null
+      }
+    ]
+  });
+
+  elements.countdownTaskName.value = "";
+  saveCountdownState();
+  render();
+}
+
+function pauseCountdownTask(taskId) {
+  const task = findCountdownTask(taskId);
+  if (!task || task.status !== "running") return;
+
+  task.remainingMs = countdownRemainingMs(task);
+  closeCountdownSegment(task);
+  task.lastStartedAt = null;
+  task.status = task.remainingMs <= 0 ? "expired" : "paused";
+  saveCountdownState();
+  render();
+}
+
+function resumeCountdownTask(taskId) {
+  const task = findCountdownTask(taskId);
+  if (!task || task.status === "running" || task.status === "completed") return;
+
+  pauseRunningCountdowns(task.id);
+  if (task.remainingMs <= 0) {
+    task.remainingMs = task.totalMs;
+  }
+  const now = new Date().toISOString();
+  task.status = "running";
+  task.lastStartedAt = now;
+  task.segments.push({
+    start: now,
+    end: null
+  });
+  saveCountdownState();
+  render();
+}
+
+function finishCountdownTask(taskId) {
+  const task = findCountdownTask(taskId);
+  if (!task || task.status === "completed") return;
+
+  if (task.status === "running") {
+    task.remainingMs = countdownRemainingMs(task);
+    closeCountdownSegment(task);
+  }
+  task.status = "completed";
+  task.completedAt = new Date().toISOString();
+  task.lastStartedAt = null;
+  saveCountdownState();
+  render();
+}
+
 function render() {
+  checkExpiredCountdowns();
   renderActiveTask();
   renderOpenTasks();
   renderToday();
   renderCalendar();
   renderSelectedDay();
   renderCompletedTasks();
+  renderCountdown();
 }
 
 function renderActiveTask() {
@@ -267,12 +411,13 @@ function renderToday() {
   const today = dateKey(new Date());
   const items = totalsByTaskForDay(today);
   const total = items.reduce((sum, item) => sum + item.durationMs, 0);
-  const completedToday = state.tasks.filter((task) => task.completedAt && dateKey(new Date(task.completedAt)) === today).length;
-  const openCount = getOpenTasks().length;
+  const completedWorkToday = state.tasks.filter((task) => task.completedAt && dateKey(new Date(task.completedAt)) === today).length;
+  const completedCountdownToday = countdownState.tasks.filter((task) => task.completedAt && dateKey(new Date(task.completedAt)) === today).length;
+  const openCount = getOpenTasks().length + getOpenCountdownTasks().length;
 
   elements.todayTotal.textContent = formatDuration(total, false);
   elements.todayTaskCount.textContent = String(items.length);
-  elements.todayCompletedCount.textContent = String(completedToday);
+  elements.todayCompletedCount.textContent = String(completedWorkToday + completedCountdownToday);
   elements.todayRunningCount.textContent = String(openCount);
 
   renderWorkList(elements.todayBreakdown, items);
@@ -378,6 +523,132 @@ function renderCompletedTasks() {
   });
 }
 
+function renderCountdown() {
+  renderCountdownActive();
+  renderOpenCountdownTasks();
+  renderCompletedCountdownTasks();
+}
+
+function renderCountdownActive() {
+  const task = getRunningCountdown();
+  elements.countdownStatus.className = "status-pill idle";
+
+  if (!task) {
+    const openTasks = getOpenCountdownTasks();
+    const hasExpired = openTasks.some((item) => item.status === "expired");
+    elements.countdownQuickPauseButton.disabled = true;
+    elements.countdownQuickCompleteButton.disabled = true;
+    elements.countdownCurrentName.textContent = hasExpired ? "時間終了のタスクあり" : openTasks.length > 0 ? "中断中のタスクあり" : "待機中";
+    elements.countdownTimer.textContent = "00:00:00";
+    elements.countdownTimer.setAttribute("datetime", "PT0S");
+    elements.countdownStatus.textContent = hasExpired ? "時間終了" : openTasks.length > 0 ? "中断中" : "未開始";
+    elements.countdownStatus.className = hasExpired ? "status-pill expired" : openTasks.length > 0 ? "status-pill paused" : "status-pill idle";
+    elements.countdownStartedAt.textContent = openTasks.length > 0 ? `${openTasks.length}件を管理中` : "--";
+    return;
+  }
+
+  const remaining = countdownRemainingMs(task);
+  elements.countdownQuickPauseButton.disabled = false;
+  elements.countdownQuickCompleteButton.disabled = false;
+  elements.countdownCurrentName.textContent = task.name;
+  elements.countdownTimer.textContent = formatDuration(remaining, true);
+  elements.countdownTimer.setAttribute("datetime", `PT${Math.ceil(remaining / 1000)}S`);
+  elements.countdownStartedAt.textContent = `開始 ${formatTime(task.lastStartedAt || task.createdAt)}`;
+  elements.countdownStatus.textContent = "カウント中";
+  elements.countdownStatus.className = "status-pill running";
+}
+
+function renderOpenCountdownTasks() {
+  const openTasks = getOpenCountdownTasks();
+  elements.countdownOpenCount.textContent = `${openTasks.length}件`;
+  elements.countdownOpenList.innerHTML = "";
+
+  if (openTasks.length === 0) {
+    elements.countdownOpenList.appendChild(emptyNode());
+    return;
+  }
+
+  openTasks.forEach((task) => {
+    const item = document.createElement("article");
+    item.className = `task-card ${task.status}`;
+    item.dataset.countdownId = task.id;
+
+    const main = document.createElement("div");
+    main.className = "task-card-main";
+
+    const topLine = document.createElement("div");
+    topLine.className = "task-card-top";
+
+    const title = document.createElement("strong");
+    title.textContent = task.name;
+
+    const status = document.createElement("span");
+    status.className = `status-pill ${task.status}`;
+    status.textContent = countdownStatusLabel(task);
+
+    const meta = document.createElement("p");
+    meta.className = "item-meta";
+    meta.textContent = `設定 ${formatDuration(task.totalMs, false)}`;
+
+    const duration = document.createElement("time");
+    const remaining = countdownRemainingMs(task);
+    duration.textContent = formatDuration(remaining, true);
+    duration.setAttribute("datetime", `PT${Math.ceil(remaining / 1000)}S`);
+
+    topLine.append(title, status);
+    main.append(topLine, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "task-card-actions";
+
+    if (task.status === "running") {
+      actions.append(countdownActionButton("pause", "Ⅱ", "中断", "secondary-button small-button"));
+    } else {
+      const resumeLabel = task.status === "expired" ? "開始" : "再開";
+      actions.append(countdownActionButton("resume", "▶", resumeLabel, "primary-button small-button"));
+    }
+    actions.append(countdownActionButton("finish", "✓", "完了", "complete-button small-button"));
+
+    item.append(main, duration, actions);
+    elements.countdownOpenList.appendChild(item);
+  });
+}
+
+function renderCompletedCountdownTasks() {
+  const completed = countdownState.tasks
+    .filter((task) => task.status === "completed")
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+
+  elements.countdownCompletedTotal.textContent = `${completed.length}件`;
+  elements.countdownCompletedList.innerHTML = "";
+
+  if (completed.length === 0) {
+    elements.countdownCompletedList.appendChild(emptyNode());
+    return;
+  }
+
+  completed.forEach((task) => {
+    const item = document.createElement("article");
+    item.className = "work-item";
+
+    const text = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = task.name;
+
+    const meta = document.createElement("p");
+    meta.className = "item-meta";
+    meta.textContent = `${formatDate(task.completedAt)} 完了 / 設定 ${formatDuration(task.totalMs, false)}`;
+
+    const duration = document.createElement("span");
+    duration.className = "duration";
+    duration.textContent = `実行 ${formatDuration(countdownElapsedMs(task), false)}`;
+
+    text.append(title, meta);
+    item.append(text, duration);
+    elements.countdownCompletedList.appendChild(item);
+  });
+}
+
 function renderWorkList(container, items) {
   container.innerHTML = "";
 
@@ -408,22 +679,41 @@ function renderWorkList(container, items) {
 }
 
 function totalsByTaskForDay(dayKey) {
-  return state.tasks
+  const workItems = state.tasks
     .map((task) => ({
       id: task.id,
       name: task.name,
       durationMs: durationForTaskOnDay(task, dayKey),
-      statusLabel: taskStatusLabel(task)
+      statusLabel: `工数 / ${taskStatusLabel(task)}`
     }))
-    .filter((item) => item.durationMs > 0)
-    .sort((a, b) => b.durationMs - a.durationMs);
+    .filter((item) => item.durationMs > 0);
+
+  const countdownItems = countdownState.tasks
+    .map((task) => ({
+      id: task.id,
+      name: task.name,
+      durationMs: durationForCountdownOnDay(task, dayKey),
+      statusLabel: `カウントダウン / ${countdownStatusLabel(task)}`
+    }))
+    .filter((item) => item.durationMs > 0);
+
+  return [...workItems, ...countdownItems].sort((a, b) => b.durationMs - a.durationMs);
 }
 
 function totalForDay(dayKey) {
-  return state.tasks.reduce((sum, task) => sum + durationForTaskOnDay(task, dayKey), 0);
+  const workTotal = state.tasks.reduce((sum, task) => sum + durationForTaskOnDay(task, dayKey), 0);
+  const countdownTotal = countdownState.tasks.reduce((sum, task) => sum + durationForCountdownOnDay(task, dayKey), 0);
+  return workTotal + countdownTotal;
 }
 
 function durationForTaskOnDay(task, dayKey) {
+  return task.segments.reduce((sum, segment) => {
+    const parts = splitSegmentByDay(segment);
+    return sum + (parts.get(dayKey) || 0);
+  }, 0);
+}
+
+function durationForCountdownOnDay(task, dayKey) {
   return task.segments.reduce((sum, segment) => {
     const parts = splitSegmentByDay(segment);
     return sum + (parts.get(dayKey) || 0);
@@ -454,11 +744,29 @@ function taskTotalMs(task) {
   }, 0);
 }
 
+function countdownElapsedMs(task) {
+  return task.segments.reduce((sum, segment) => {
+    const start = new Date(segment.start);
+    const end = segment.end ? new Date(segment.end) : new Date();
+    return sum + Math.max(0, end - start);
+  }, 0);
+}
+
 function pauseRunningTasks(exceptTaskId) {
   state.tasks.forEach((task) => {
     if (task.status !== "running" || task.id === exceptTaskId) return;
     closeOpenSegment(task);
     task.status = "paused";
+  });
+}
+
+function pauseRunningCountdowns(exceptTaskId) {
+  countdownState.tasks.forEach((task) => {
+    if (task.status !== "running" || task.id === exceptTaskId) return;
+    task.remainingMs = countdownRemainingMs(task);
+    closeCountdownSegment(task);
+    task.lastStartedAt = null;
+    task.status = task.remainingMs <= 0 ? "expired" : "paused";
   });
 }
 
@@ -469,12 +777,66 @@ function closeOpenSegment(task) {
   }
 }
 
+function closeCountdownSegment(task, endAt = new Date().toISOString()) {
+  const openSegment = task.segments.find((segment) => !segment.end);
+  if (openSegment) {
+    openSegment.end = endAt;
+  }
+}
+
+function checkExpiredCountdowns() {
+  let changed = false;
+  countdownState.tasks.forEach((task) => {
+    if (task.status !== "running") return;
+    const remaining = countdownRemainingMs(task);
+    if (remaining > 0) return;
+    const expiredAt = new Date(new Date(task.lastStartedAt).getTime() + task.remainingMs).toISOString();
+    closeCountdownSegment(task, expiredAt);
+    task.remainingMs = 0;
+    task.lastStartedAt = null;
+    task.status = "expired";
+    changed = true;
+  });
+  if (changed) saveCountdownState();
+}
+
+function countdownRemainingMs(task) {
+  if (task.status !== "running" || !task.lastStartedAt) {
+    return Math.max(0, task.remainingMs || 0);
+  }
+
+  const elapsed = new Date() - new Date(task.lastStartedAt);
+  return Math.max(0, (task.remainingMs || 0) - elapsed);
+}
+
+function countdownInputMs() {
+  const hours = clampNumber(elements.countdownHours.value, 0, 99);
+  const minutes = clampNumber(elements.countdownMinutes.value, 0, 59);
+  elements.countdownHours.value = String(hours);
+  elements.countdownMinutes.value = String(minutes);
+  return hours * 60 * 60 * 1000 + minutes * 60 * 1000;
+}
+
+function clampNumber(value, min, max) {
+  const number = Number.parseInt(value, 10);
+  if (Number.isNaN(number)) return min;
+  return Math.min(max, Math.max(min, number));
+}
+
 function findTask(taskId) {
   return state.tasks.find((task) => task.id === taskId);
 }
 
+function findCountdownTask(taskId) {
+  return countdownState.tasks.find((task) => task.id === taskId);
+}
+
 function getRunningTask() {
   return state.tasks.find((task) => task.status === "running") || null;
+}
+
+function getRunningCountdown() {
+  return countdownState.tasks.find((task) => task.status === "running") || null;
 }
 
 function getOpenTasks() {
@@ -486,8 +848,30 @@ function getOpenTasks() {
     });
 }
 
+function getOpenCountdownTasks() {
+  const priority = {
+    running: 0,
+    expired: 1,
+    paused: 2
+  };
+
+  return countdownState.tasks
+    .filter((task) => task.status === "running" || task.status === "paused" || task.status === "expired")
+    .sort((a, b) => {
+      if (a.status !== b.status) return priority[a.status] - priority[b.status];
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+}
+
 function taskStatusLabel(task) {
   if (task.status === "running") return "計測中";
+  if (task.status === "paused") return "中断中";
+  return "完了";
+}
+
+function countdownStatusLabel(task) {
+  if (task.status === "running") return "カウント中";
+  if (task.status === "expired") return "時間終了";
   if (task.status === "paused") return "中断中";
   return "完了";
 }
@@ -497,6 +881,23 @@ function actionButton(action, icon, label, className) {
   button.className = className;
   button.type = "button";
   button.dataset.action = action;
+
+  const iconNode = document.createElement("span");
+  iconNode.setAttribute("aria-hidden", "true");
+  iconNode.textContent = icon;
+
+  const labelNode = document.createElement("span");
+  labelNode.textContent = label;
+
+  button.append(iconNode, labelNode);
+  return button;
+}
+
+function countdownActionButton(action, icon, label, className) {
+  const button = document.createElement("button");
+  button.className = className;
+  button.type = "button";
+  button.dataset.countdownAction = action;
 
   const iconNode = document.createElement("span");
   iconNode.setAttribute("aria-hidden", "true");
@@ -536,6 +937,26 @@ function loadState() {
   }
 }
 
+function loadCountdownState() {
+  try {
+    const stored = localStorage.getItem(COUNTDOWN_STORAGE_KEY);
+    if (!stored) {
+      return {
+        tasks: []
+      };
+    }
+
+    const parsed = JSON.parse(stored);
+    return {
+      tasks: normalizeCountdownTasks(parsed.tasks)
+    };
+  } catch {
+    return {
+      tasks: []
+    };
+  }
+}
+
 function normalizeTasks(tasks) {
   if (!Array.isArray(tasks)) return [];
   return tasks
@@ -548,6 +969,44 @@ function normalizeTasks(tasks) {
       completedAt: task.completedAt || null,
       segments: Array.isArray(task.segments) ? task.segments : []
     }));
+}
+
+function normalizeCountdownTasks(tasks) {
+  if (!Array.isArray(tasks)) return [];
+  return tasks
+    .filter((task) => task && task.id && task.name)
+    .map((task) => {
+      const totalMs = Number.isFinite(task.totalMs) && task.totalMs > 0 ? task.totalMs : 25 * 60 * 1000;
+      const remainingMs = Number.isFinite(task.remainingMs) ? Math.max(0, task.remainingMs) : totalMs;
+      return {
+        id: task.id,
+        name: task.name,
+        status: ["running", "paused", "expired", "completed"].includes(task.status) ? task.status : "paused",
+        totalMs,
+        remainingMs,
+        createdAt: task.createdAt || new Date().toISOString(),
+        completedAt: task.completedAt || null,
+        lastStartedAt: task.lastStartedAt || null,
+        segments: normalizeCountdownSegments(task)
+      };
+    });
+}
+
+function normalizeCountdownSegments(task) {
+  if (Array.isArray(task.segments)) {
+    return task.segments.filter((segment) => segment && segment.start);
+  }
+
+  if (task.status === "running" && task.lastStartedAt) {
+    return [
+      {
+        start: task.lastStartedAt,
+        end: null
+      }
+    ];
+  }
+
+  return [];
 }
 
 function ensureSingleRunningTask() {
@@ -564,8 +1023,27 @@ function ensureSingleRunningTask() {
   saveState();
 }
 
+function ensureSingleRunningCountdown() {
+  let runningTaskFound = false;
+  countdownState.tasks.forEach((task) => {
+    if (task.status !== "running") return;
+    if (!runningTaskFound) {
+      runningTaskFound = true;
+      return;
+    }
+    task.remainingMs = countdownRemainingMs(task);
+    task.lastStartedAt = null;
+    task.status = task.remainingMs <= 0 ? "expired" : "paused";
+  });
+  saveCountdownState();
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function saveCountdownState() {
+  localStorage.setItem(COUNTDOWN_STORAGE_KEY, JSON.stringify(countdownState));
 }
 
 function dateKey(date) {

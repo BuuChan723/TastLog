@@ -68,6 +68,32 @@ button:disabled {
   margin-bottom: 20px;
 }
 
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mode-tab {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.mode-tab.active {
+  border-color: rgba(15, 143, 131, 0.45);
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.tab-view[hidden] {
+  display: none;
+}
+
 .kicker,
 .section-label {
   margin: 0 0 4px;
@@ -117,7 +143,8 @@ h2 {
 
 .today-panel,
 .detail-panel,
-.history-panel {
+.history-panel,
+.countdown-history-panel {
   display: flex;
   min-height: 272px;
   flex-direction: column;
@@ -129,6 +156,10 @@ h2 {
 
 .history-panel {
   grid-column: 1 / -1;
+}
+
+.countdown-history-panel {
+  min-height: 360px;
 }
 
 .task-form label {
@@ -159,6 +190,38 @@ h2 {
 .input-row input:focus {
   border-color: var(--teal);
   box-shadow: 0 0 0 4px rgba(15, 143, 131, 0.14);
+}
+
+.countdown-input-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 92px auto;
+  gap: 10px;
+}
+
+.countdown-input-grid > input,
+.duration-field input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  color: var(--ink);
+  background: #fbfcff;
+  outline: 0;
+}
+
+.countdown-input-grid > input:focus,
+.duration-field input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 4px rgba(15, 143, 131, 0.14);
+}
+
+.duration-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .primary-button,
@@ -261,6 +324,15 @@ h2 {
   text-align: right;
 }
 
+#countdownTimer {
+  min-width: 136px;
+  color: var(--ink);
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
 .status-line {
   display: flex;
   align-items: center;
@@ -291,6 +363,10 @@ h2 {
 
 .status-pill.paused {
   background: var(--amber);
+}
+
+.status-pill.expired {
+  background: var(--coral);
 }
 
 .control-row {
@@ -441,6 +517,11 @@ h2 {
 .task-card.running {
   border-color: rgba(15, 143, 131, 0.5);
   background: linear-gradient(180deg, #ffffff, #effaf8);
+}
+
+.task-card.expired {
+  border-color: rgba(217, 87, 72, 0.42);
+  background: linear-gradient(180deg, #ffffff, #fff2f0);
 }
 
 .task-card-main {
@@ -605,6 +686,7 @@ h2 {
   }
 
   .input-row,
+  .countdown-input-grid,
   .control-row,
   .quick-action-row,
   .metrics {
@@ -637,6 +719,12 @@ h2 {
   }
 
   #activeTimer {
+    min-width: 0;
+    font-size: 1.8rem;
+    text-align: left;
+  }
+
+  #countdownTimer {
     min-width: 0;
     font-size: 1.8rem;
     text-align: left;
