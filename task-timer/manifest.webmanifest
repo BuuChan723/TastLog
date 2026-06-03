@@ -1,0 +1,22 @@
+{
+  "name": "工数タイマー",
+  "short_name": "工数",
+  "description": "タスクごとの工数を記録して、今日の作業時間と日別の集計を確認できます。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#0f8f83",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
