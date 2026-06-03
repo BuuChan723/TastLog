@@ -11,7 +11,7 @@
     <meta name="format-detection" content="telephone=no" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=7" />
   </head>
   <body>
     <main class="app-shell">
@@ -189,6 +189,10 @@
                 <span>分</span>
                 <input id="countdownMinutes" name="countdownMinutes" type="number" inputmode="numeric" min="0" max="59" value="25" />
               </label>
+              <label class="duration-field" for="countdownSeconds">
+                <span>秒</span>
+                <input id="countdownSeconds" name="countdownSeconds" type="number" inputmode="numeric" min="0" max="59" value="0" />
+              </label>
               <button class="primary-button" id="countdownStartButton" type="submit">
                 <span aria-hidden="true">▶</span>
                 <span>開始</span>
@@ -219,6 +223,13 @@
                 <span aria-hidden="true">✓</span>
                 <span>完了</span>
               </button>
+            </div>
+
+            <div class="notification-row">
+              <button class="secondary-button notification-button" id="countdownNotificationButton" type="button">
+                通知を許可
+              </button>
+              <span id="countdownNotificationState">通知は未許可です。</span>
             </div>
 
             <p class="switch-note">別のカウントダウンを開始すると、今のタスクは自動で中断されます。</p>
@@ -253,6 +264,8 @@
       <p class="empty-state">記録はまだありません。</p>
     </template>
 
-    <script src="app.js?v=6"></script>
+    <div class="app-toast" id="countdownAlert" role="status" aria-live="polite" hidden></div>
+
+    <script src="app.js?v=7"></script>
   </body>
 </html>

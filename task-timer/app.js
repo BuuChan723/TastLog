@@ -42,16 +42,20 @@ const elements = {
   countdownTaskName: document.querySelector("#countdownTaskName"),
   countdownHours: document.querySelector("#countdownHours"),
   countdownMinutes: document.querySelector("#countdownMinutes"),
+  countdownSeconds: document.querySelector("#countdownSeconds"),
   countdownCurrentName: document.querySelector("#countdownCurrentName"),
   countdownTimer: document.querySelector("#countdownTimer"),
   countdownStatus: document.querySelector("#countdownStatus"),
   countdownStartedAt: document.querySelector("#countdownStartedAt"),
   countdownQuickPauseButton: document.querySelector("#countdownQuickPauseButton"),
   countdownQuickCompleteButton: document.querySelector("#countdownQuickCompleteButton"),
+  countdownNotificationButton: document.querySelector("#countdownNotificationButton"),
+  countdownNotificationState: document.querySelector("#countdownNotificationState"),
   countdownOpenCount: document.querySelector("#countdownOpenCount"),
   countdownOpenList: document.querySelector("#countdownOpenList"),
   countdownCompletedTotal: document.querySelector("#countdownCompletedTotal"),
   countdownCompletedList: document.querySelector("#countdownCompletedList"),
+  countdownAlert: document.querySelector("#countdownAlert"),
   emptyTemplate: document.querySelector("#emptyTemplate")
 };
 
@@ -59,6 +63,9 @@ let state = loadState();
 let countdownState = loadCountdownState();
 let calendarCursor = new Date();
 calendarCursor.setDate(1);
+let alarmAudioContext = null;
+let alarmPrimed = false;
+const notifiedExpiredCountdownIds = new Set();
 
 if (!state.selectedDate) {
   state.selectedDate = dateKey(new Date());
@@ -70,6 +77,7 @@ bindEvents();
 render();
 setInterval(render, 1000);
 registerServiceWorker();
+updateNotificationUi();
 
 function bindEvents() {
   elements.workModeButton.addEventListener("click", () => setMode("work"));
@@ -106,6 +114,8 @@ function bindEvents() {
     event.preventDefault();
     startCountdownTask();
   });
+
+  elements.countdownNotificationButton.addEventListener("click", requestNotificationPermission);
 
   elements.countdownQuickPauseButton.addEventListener("click", () => {
     const task = getRunningCountdown();
@@ -171,6 +181,107 @@ function registerServiceWorker() {
   const canRegister = "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
   if (!canRegister) return;
   navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
+function updateNotificationUi() {
+  if (!("Notification" in window)) {
+    elements.countdownNotificationButton.disabled = true;
+    elements.countdownNotificationState.textContent = "このブラウザは通知に対応していません。";
+    return;
+  }
+
+  if (Notification.permission === "granted") {
+    elements.countdownNotificationButton.disabled = true;
+    elements.countdownNotificationState.textContent = "通知は許可済みです。";
+    return;
+  }
+
+  if (Notification.permission === "denied") {
+    elements.countdownNotificationButton.disabled = true;
+    elements.countdownNotificationState.textContent = "通知はブラウザ設定で拒否されています。";
+    return;
+  }
+
+  elements.countdownNotificationButton.disabled = false;
+  elements.countdownNotificationState.textContent = "終了時に通知を出すには許可してください。";
+}
+
+function requestNotificationPermission() {
+  prepareAlarmSound();
+  if (!("Notification" in window)) {
+    updateNotificationUi();
+    return;
+  }
+
+  Notification.requestPermission().then(() => updateNotificationUi());
+}
+
+function prepareAlarmSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  if (!alarmAudioContext) {
+    alarmAudioContext = new AudioContextClass();
+  }
+
+  if (alarmAudioContext.state === "suspended") {
+    alarmAudioContext.resume().catch(() => {});
+  }
+  alarmPrimed = true;
+}
+
+function playAlarmSound() {
+  if (!alarmAudioContext || !alarmPrimed) return;
+
+  if (alarmAudioContext.state === "suspended") {
+    alarmAudioContext.resume().catch(() => {});
+  }
+
+  const now = alarmAudioContext.currentTime;
+  [0, 0.22, 0.44].forEach((offset) => {
+    const oscillator = alarmAudioContext.createOscillator();
+    const gain = alarmAudioContext.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, now + offset);
+    gain.gain.setValueAtTime(0.0001, now + offset);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+    oscillator.connect(gain);
+    gain.connect(alarmAudioContext.destination);
+    oscillator.start(now + offset);
+    oscillator.stop(now + offset + 0.18);
+  });
+}
+
+function alertCountdownFinished(task) {
+  if (notifiedExpiredCountdownIds.has(task.id)) return;
+  notifiedExpiredCountdownIds.add(task.id);
+
+  playAlarmSound();
+  if ("vibrate" in navigator) {
+    navigator.vibrate([180, 90, 180]);
+  }
+
+  showCountdownAlert(`${task.name} のカウントダウンが終了しました。`);
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification("カウントダウン終了", {
+        body: `${task.name} が終了しました。`,
+        tag: `countdown-${task.id}`,
+        renotify: true
+      });
+    } catch {}
+  }
+}
+
+function showCountdownAlert(message) {
+  elements.countdownAlert.textContent = message;
+  elements.countdownAlert.hidden = false;
+  window.clearTimeout(showCountdownAlert.timeoutId);
+  showCountdownAlert.timeoutId = window.setTimeout(() => {
+    elements.countdownAlert.hidden = true;
+  }, 5200);
 }
 
 function startTask() {
@@ -242,6 +353,7 @@ function startCountdownTask() {
   const totalMs = countdownInputMs();
   if (!name || totalMs <= 0) return;
 
+  prepareAlarmSound();
   pauseRunningCountdowns();
   const now = new Date().toISOString();
 
@@ -283,6 +395,8 @@ function resumeCountdownTask(taskId) {
   const task = findCountdownTask(taskId);
   if (!task || task.status === "running" || task.status === "completed") return;
 
+  prepareAlarmSound();
+  notifiedExpiredCountdownIds.delete(task.id);
   pauseRunningCountdowns(task.id);
   if (task.remainingMs <= 0) {
     task.remainingMs = task.totalMs;
@@ -795,6 +909,7 @@ function checkExpiredCountdowns() {
     task.remainingMs = 0;
     task.lastStartedAt = null;
     task.status = "expired";
+    alertCountdownFinished(task);
     changed = true;
   });
   if (changed) saveCountdownState();
@@ -812,9 +927,11 @@ function countdownRemainingMs(task) {
 function countdownInputMs() {
   const hours = clampNumber(elements.countdownHours.value, 0, 99);
   const minutes = clampNumber(elements.countdownMinutes.value, 0, 59);
+  const seconds = clampNumber(elements.countdownSeconds.value, 0, 59);
   elements.countdownHours.value = String(hours);
   elements.countdownMinutes.value = String(minutes);
-  return hours * 60 * 60 * 1000 + minutes * 60 * 1000;
+  elements.countdownSeconds.value = String(seconds);
+  return hours * 60 * 60 * 1000 + minutes * 60 * 1000 + seconds * 1000;
 }
 
 function clampNumber(value, min, max) {
