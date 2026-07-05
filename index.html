@@ -1,128 +1,276 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
-
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Markdownエディタ</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-
-<body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">M</span>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>工数タイマー</title>
+    <meta name="theme-color" content="#0f8f83" />
+    <meta name="apple-mobile-web-app-title" content="工数タイマー" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="styles.css?v=8" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
         <div>
-          <h1>Markdownエディタ</h1>
-          <p>文章を選んで、ボタンで整える</p>
+          <p class="kicker">Task Log</p>
+          <h1>工数タイマー</h1>
         </div>
-      </div>
-      <div class="document-info" aria-live="polite">
-        <span id="charCount">0文字</span>
-        <span id="lineCount">1行</span>
-      </div>
-    </header>
+        <button class="icon-button danger-text" id="resetData" type="button" title="全データ削除">
+          <span aria-hidden="true">×</span>
+          <span>リセット</span>
+        </button>
+      </header>
 
-    <nav class="toolbar" aria-label="Markdown変換ツール">
-      <details class="tool-menu">
-        <summary title="見出しの種類を選びます">見出し</summary>
-        <div class="tool-menu-panel">
-          <button type="button" data-action="heading1" title="選択行を大見出しにします">大見出し</button>
-          <button type="button" data-action="heading2" title="選択行を中見出しにします">中見出し</button>
-          <button type="button" data-action="heading3" title="選択行を小見出しにします">小見出し</button>
-          <button type="button" data-action="heading4" title="選択行をさらに小さい見出しにします">見出し4</button>
-          <button type="button" data-action="heading5" title="選択行を小さな見出しにします">見出し5</button>
-          <button type="button" data-action="heading6" title="選択行を最小見出しにします">見出し6</button>
-        </div>
-      </details>
+      <nav class="mode-tabs" aria-label="表示切り替え">
+        <button class="mode-tab active" id="workModeButton" type="button" aria-controls="workView" aria-selected="true">
+          工数
+        </button>
+        <button class="mode-tab" id="countdownModeButton" type="button" aria-controls="countdownView" aria-selected="false">
+          カウントダウン
+        </button>
+      </nav>
 
-      <details class="tool-menu">
-        <summary title="リストの種類を選びます">リスト</summary>
-        <div class="tool-menu-panel">
-          <button type="button" data-action="bullet" title="選択行を箇条書きにします">箇条書き</button>
-          <button type="button" data-action="numbered" title="選択行を番号付きリストにします">番号リスト</button>
-          <button type="button" data-action="checklist" title="選択行をチェックリストにします">チェックリスト</button>
-        </div>
-      </details>
+      <section class="main-grid tab-view active" id="workView" aria-label="工数タイマー">
+        <section class="panel task-panel" aria-label="タスク操作">
+          <form class="task-form" id="taskForm">
+            <label for="taskName">タスク名</label>
+            <div class="input-row">
+              <input
+                id="taskName"
+                name="taskName"
+                type="text"
+                autocomplete="off"
+                maxlength="80"
+                placeholder="例: 企画書の作成"
+              />
+              <button class="primary-button" id="startButton" type="submit">
+                <span aria-hidden="true">▶</span>
+                <span>開始</span>
+              </button>
+            </div>
+          </form>
 
-      <details class="tool-menu">
-        <summary title="文字の見た目を整えます">文字装飾</summary>
-        <div class="tool-menu-panel">
-          <button type="button" data-action="bold" title="選択文字を太字にします">太字</button>
-          <button type="button" data-action="italic" title="選択文字を斜体にします">斜体</button>
-          <button type="button" data-action="boldItalic" title="選択文字を太字かつ斜体にします">太字斜体</button>
-          <button type="button" data-action="strike" title="選択文字に取り消し線を付けます">取り消し線</button>
-          <button type="button" data-action="inlineCode" title="選択文字を文中コードにします">文中コード</button>
-        </div>
-      </details>
+          <div class="current-task" id="currentTask">
+            <div class="timer-heading">
+              <div>
+                <p>計測中のタスク</p>
+                <h2 id="currentTaskName">待機中</h2>
+              </div>
+              <time id="activeTimer" datetime="PT0S">00:00:00</time>
+            </div>
 
-      <details class="tool-menu">
-        <summary title="文章のまとまりを整えます">ブロック</summary>
-        <div class="tool-menu-panel">
-          <button type="button" data-action="quote" title="選択行を引用にします">引用</button>
-          <button type="button" data-action="code" title="選択範囲をコードブロックにします">コードブロック</button>
-          <button type="button" data-action="htmlBlock" title="HTMLブロックのひな形を挿入します">HTMLブロック</button>
-          <button type="button" data-action="lineBreak" title="Markdownの明示的な改行を挿入します">改行</button>
-        </div>
-      </details>
+            <div class="status-line">
+              <span class="status-pill idle" id="activeStatus">未開始</span>
+              <span id="startedAt">--</span>
+            </div>
 
-      <details class="tool-menu">
-        <summary title="リンクや表などを挿入します">挿入</summary>
-        <div class="tool-menu-panel">
-          <button type="button" data-action="link" title="選択文字をリンク文字にします">リンク</button>
-          <button type="button" data-action="image" title="画像のMarkdownを挿入します">画像</button>
-          <button type="button" data-action="table" title="表のひな形を挿入します">表</button>
-          <button type="button" data-action="footnote" title="脚注のひな形を挿入します">脚注</button>
-          <button type="button" data-action="rule" title="区切り線を挿入します">区切り線</button>
-        </div>
-      </details>
-    </nav>
+            <div class="quick-action-row">
+              <button class="secondary-button" id="quickPauseButton" type="button" disabled>
+                <span aria-hidden="true">Ⅱ</span>
+                <span>中断</span>
+              </button>
+              <button class="complete-button" id="quickCompleteButton" type="button" disabled>
+                <span aria-hidden="true">✓</span>
+                <span>完了</span>
+              </button>
+            </div>
 
-    <main class="workspace">
-      <section class="pane editor-pane" aria-labelledby="editorTitle">
-        <div class="pane-header">
-          <h2 id="editorTitle">Markdown編集欄</h2>
-          <span id="selectionInfo">未選択</span>
-        </div>
-        <textarea id="editor" spellcheck="false" aria-label="Markdown編集欄"># サンプル文書
+            <p class="switch-note">未完了タスクは下の一覧から切り替えできます。</p>
+          </div>
 
-## 確認事項
+          <section class="open-tasks-section" aria-label="未完了タスク">
+            <div class="panel-title-row compact-title-row">
+              <div>
+                <p class="section-label">Open</p>
+                <h2>未完了タスク</h2>
+              </div>
+              <strong id="openTaskCount">0件</strong>
+            </div>
+            <div class="open-task-list" id="openTaskList"></div>
+          </section>
+        </section>
 
-- 内容を確認する
-- 修正する
-- 共有する
+        <section class="panel today-panel" aria-label="今日の工数">
+          <div class="panel-title-row">
+            <div>
+              <p class="section-label">Today</p>
+              <h2>今日の工数</h2>
+            </div>
+            <strong id="todayTotal">0分</strong>
+          </div>
 
-> 右側でプレビューを確認できます。
-</textarea>
+          <div class="metrics">
+            <div>
+              <span id="todayTaskCount">0</span>
+              <p>タスク</p>
+            </div>
+            <div>
+              <span id="todayCompletedCount">0</span>
+              <p>完了</p>
+            </div>
+            <div>
+              <span id="todayRunningCount">0</span>
+              <p>未完了</p>
+            </div>
+          </div>
+
+          <div class="list-area" id="todayBreakdown"></div>
+        </section>
+
+        <section class="panel calendar-panel" aria-label="カレンダー">
+          <div class="calendar-header">
+            <button class="square-button" id="prevMonth" type="button" title="前の月">
+              <span aria-hidden="true">‹</span>
+            </button>
+            <h2 id="monthTitle">--</h2>
+            <button class="square-button" id="nextMonth" type="button" title="次の月">
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+
+          <div class="weekdays" aria-hidden="true">
+            <span>月</span>
+            <span>火</span>
+            <span>水</span>
+            <span>木</span>
+            <span>金</span>
+            <span>土</span>
+            <span>日</span>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="panel detail-panel" aria-label="選択日の工数">
+          <div class="panel-title-row">
+            <div>
+              <p class="section-label">Selected Day</p>
+              <h2 id="selectedDateTitle">--</h2>
+            </div>
+            <div class="selected-day-actions">
+              <strong id="selectedDateTotal">0分</strong>
+              <button class="delete-day-button" id="deleteSelectedDay" type="button" disabled>
+                この日の記録を削除
+              </button>
+            </div>
+          </div>
+          <div class="list-area" id="selectedDayList"></div>
+        </section>
+
+        <section class="panel history-panel" aria-label="完了タスク">
+          <div class="panel-title-row">
+            <div>
+              <p class="section-label">Done</p>
+              <h2>完了タスク</h2>
+            </div>
+            <strong id="completedTotal">0件</strong>
+          </div>
+          <div class="list-area history-list" id="completedList"></div>
+        </section>
       </section>
 
-      <section class="pane preview-pane" aria-labelledby="previewTitle">
-        <div class="pane-header">
-          <h2 id="previewTitle">リアルタイムプレビュー</h2>
-          <span id="previewState">更新済み</span>
-        </div>
-        <article id="preview" class="preview-content" aria-live="polite"></article>
+      <section class="main-grid tab-view" id="countdownView" aria-label="カウントダウン" hidden>
+        <section class="panel task-panel" aria-label="カウントダウン操作">
+          <form class="task-form" id="countdownForm">
+            <label for="countdownTaskName">タスク名と時間</label>
+            <div class="countdown-input-grid">
+              <input
+                id="countdownTaskName"
+                name="countdownTaskName"
+                type="text"
+                autocomplete="off"
+                maxlength="80"
+                placeholder="例: 集中作業"
+              />
+              <label class="duration-field" for="countdownHours">
+                <span>時間</span>
+                <input id="countdownHours" name="countdownHours" type="number" inputmode="numeric" min="0" max="99" value="0" />
+              </label>
+              <label class="duration-field" for="countdownMinutes">
+                <span>分</span>
+                <input id="countdownMinutes" name="countdownMinutes" type="number" inputmode="numeric" min="0" max="59" value="25" />
+              </label>
+              <label class="duration-field" for="countdownSeconds">
+                <span>秒</span>
+                <input id="countdownSeconds" name="countdownSeconds" type="number" inputmode="numeric" min="0" max="59" value="0" />
+              </label>
+              <button class="primary-button" id="countdownStartButton" type="submit">
+                <span aria-hidden="true">▶</span>
+                <span>開始</span>
+              </button>
+            </div>
+          </form>
+
+          <div class="current-task countdown-current" id="countdownCurrentTask">
+            <div class="timer-heading">
+              <div>
+                <p>カウントダウン中のタスク</p>
+                <h2 id="countdownCurrentName">待機中</h2>
+              </div>
+              <time id="countdownTimer" datetime="PT0S">00:00:00</time>
+            </div>
+
+            <div class="status-line">
+              <span class="status-pill idle" id="countdownStatus">未開始</span>
+              <span id="countdownStartedAt">--</span>
+            </div>
+
+            <div class="quick-action-row">
+              <button class="secondary-button" id="countdownQuickPauseButton" type="button" disabled>
+                <span aria-hidden="true">Ⅱ</span>
+                <span>中断</span>
+              </button>
+              <button class="complete-button" id="countdownQuickCompleteButton" type="button" disabled>
+                <span aria-hidden="true">✓</span>
+                <span>完了</span>
+              </button>
+            </div>
+
+            <div class="notification-row">
+              <button class="secondary-button notification-button" id="countdownNotificationButton" type="button">
+                通知を許可
+              </button>
+              <span id="countdownNotificationState">通知は未許可です。</span>
+            </div>
+
+            <p class="switch-note">別のカウントダウンを開始すると、今のタスクは自動で中断されます。</p>
+          </div>
+
+          <section class="open-tasks-section" aria-label="未完了カウントダウン">
+            <div class="panel-title-row compact-title-row">
+              <div>
+                <p class="section-label">Open</p>
+                <h2>未完了カウントダウン</h2>
+              </div>
+              <strong id="countdownOpenCount">0件</strong>
+            </div>
+            <div class="open-task-list" id="countdownOpenList"></div>
+          </section>
+        </section>
+
+        <section class="panel countdown-history-panel" aria-label="完了したカウントダウン">
+          <div class="panel-title-row">
+            <div>
+              <p class="section-label">Done</p>
+              <h2>完了したカウントダウン</h2>
+            </div>
+            <strong id="countdownCompletedTotal">0件</strong>
+          </div>
+          <div class="list-area history-list" id="countdownCompletedList"></div>
+        </section>
       </section>
     </main>
 
-    <footer class="bottom-panel">
-      <div class="action-row" aria-label="文書操作">
-        <button type="button" id="saveBtn" title="Markdownファイルとして保存します">保存</button>
-        <button type="button" id="tidyBtn" title="余分な空白や空行を整えます">整える</button>
-      </div>
+    <template id="emptyTemplate">
+      <p class="empty-state">記録はまだありません。</p>
+    </template>
 
-      <section class="check-panel" aria-labelledby="checkTitle">
-        <div class="check-heading">
-          <h2 id="checkTitle">補正結果・チェック結果</h2>
-          <span id="checkBadge">確認中</span>
-        </div>
-        <ul id="checkList"></ul>
-      </section>
-    </footer>
-  </div>
+    <div class="app-toast" id="countdownAlert" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js"></script>
-</body>
-
+    <script src="app.js?v=8"></script>
+  </body>
 </html>
